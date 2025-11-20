@@ -1,47 +1,100 @@
-import React, { useState, useEffect } from 'react';
-// import { collection, getDocs, updateDoc, doc, deleteDoc } from 'firebase/firestore'; 
-// import { db } from '../firebase/config'; 
+// src/components/AdminDashboard.jsx
 
+import React, { useState, useEffect } from 'react';
+import { collection, query, where, getDocs, updateDoc, doc, deleteDoc } from 'firebase/firestore'; 
+import { db } from '../firebase/config'; 
+
+// لوحة تحكم بسيطة تتطلب تصفح جميع الحرفيين لإدارة الحسابات
 const AdminDashboard = () => {
     const [artisans, setArtisans] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    // دالة لجلب جميع الحرفيين
+    const fetchArtisans = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            // جلب جميع الوثائق في مجموعة artisans
+            const q = collection(db, "artisans");
+            const querySnapshot = await getDocs(q);
+            
+            const fetchedArtisans = querySnapshot.docs.map(doc => ({ 
+                id: doc.id, 
+                ...doc.data(),
+                // تحويل تاريخ VIP من Firebase Timestamp إلى كائن تاريخ JavaScript إذا كان موجوداً
+                vipSubscriptionEndDate: doc.data().vipSubscriptionEndDate?.toDate ? doc.data().vipSubscriptionEndDate.toDate() : doc.data().vipSubscriptionEndDate
+            }));
+            
+            setArtisans(fetchedArtisans);
+        } catch (err) {
+            console.error("Error fetching artisans: ", err);
+            setError("فشل في جلب بيانات الحرفيين من قاعدة البيانات.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        // **وظيفة جلب جميع الحرفيين من Firebase**
-        const fetchArtisans = async () => {
-            // const querySnapshot = await getDocs(collection(db, "artisans"));
-            // const fetchedArtisans = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            // محاكاة بيانات مؤقتة
-            const mockArtisans = [
-                { id: 'a1', fullName: "محمد أمين", profession: "نجار", status: "active", isVIP: true, vipPending: false },
-                { id: 'a2', fullName: "علي خالد", profession: "كهربائي", status: "pending", isVIP: false, vipPending: false },
-                { id: 'a3', fullName: "سارة فؤاد", profession: "سباك", status: "active", isVIP: false, vipPending: true }, // طلب VIP قيد المراجعة
-            ];
-            
-            setArtisans(mockArtisans);
-            setLoading(false);
-        };
         fetchArtisans();
     }, []);
 
-    // **وظيفة محاكاة لقبول VIP (في التطبيق الحقيقي، يتم تحديث Firestore)**
-    const handleAcceptVIP = async (id) => {
-        // const artisanRef = doc(db, "artisans", id);
-        // await updateDoc(artisanRef, { isVIP: true, vipPending: false, vipSubscriptionEndDate: new Date() + 1yr });
-        
-        // تحديث الواجهة
-        setArtisans(artisans.map(a => 
-            a.id === id ? { ...a, isVIP: true, vipPending: false } : a
-        ));
-        alert(`تم قبول طلب VIP للحرفي ذو المعرف: ${id}`);
+    // **وظيفة قبول أو رفض VIP (تحديث Firestore)**
+    const handleToggleVIP = async (id, currentStatus) => {
+        const confirmMsg = currentStatus 
+            ? "هل أنت متأكد من إلغاء اشتراك VIP لهذا الحرفي؟"
+            : "هل أنت متأكد من قبول وتفعيل اشتراك VIP لهذا الحرفي لمدة سنة؟";
+
+        if (!window.confirm(confirmMsg)) return;
+
+        try {
+            const artisanRef = doc(db, "artisans", id);
+            
+            const newVIPStatus = !currentStatus;
+            let updatePayload = { 
+                isVIP: newVIPStatus, 
+                // افتراض أن طلب VIP ليس قيد المراجعة بعد التفاعل معه
+                vipPending: false 
+            };
+            
+            if (newVIPStatus) {
+                // تفعيل لمدة 12 شهرًا من الآن
+                const expiryDate = new Date();
+                expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                updatePayload.vipSubscriptionEndDate = expiryDate;
+            } else {
+                updatePayload.vipSubscriptionEndDate = null;
+            }
+
+            await updateDoc(artisanRef, updatePayload);
+            
+            // تحديث الواجهة (بدون إعادة جلب البيانات بالكامل)
+            setArtisans(artisans.map(a => 
+                a.id === id ? { ...a, ...updatePayload } : a
+            ));
+            alert(`تم ${newVIPStatus ? 'تفعيل' : 'إلغاء'} حالة VIP بنجاح.`);
+
+        } catch (err) {
+            console.error("Error updating VIP status:", err);
+            alert("فشل في تحديث حالة VIP.");
+        }
     };
 
-    // **وظيفة محاكاة لحذف الحساب (في التطبيق الحقيقي، يتم تحديث Firestore)**
+    // **وظيفة حذف الحساب (تحديث Firestore)**
     const handleDeleteAccount = async (id) => {
-        if (window.confirm(`هل أنت متأكد من حذف حساب الحرفي ذو المعرف: ${id}؟`)) {
-            // await deleteDoc(doc(db, "artisans", id));
+        if (!window.confirm(`هل أنت متأكد من حذف حساب الحرفي ذو المعرف: ${id}؟ لن يمكن التراجع عن هذا الإجراء.`)) return;
+
+        try {
+            // حذف الوثيقة من Firestore
+            await deleteDoc(doc(db, "artisans", id));
+            
+            // تحديث الواجهة
             setArtisans(artisans.filter(a => a.id !== id));
+            alert(`تم حذف حساب الحرفي ذو المعرف: ${id} بنجاح.`);
+            
+        } catch (err) {
+            console.error("Error deleting document:", err);
+            alert("فشل في حذف الحساب.");
         }
     };
     
@@ -50,7 +103,8 @@ const AdminDashboard = () => {
     const activeArtisans = artisans.filter(a => a.status === 'active').length;
     const pendingVIP = artisans.filter(a => a.vipPending).length;
 
-    if (loading) return <div className="text-center p-8">...جاري تحميل لوحة التحكم</div>;
+    if (loading) return <div className="text-center p-8 text-lg">...جاري تحميل لوحة التحكم</div>;
+    if (error) return <div className="text-center p-8 text-red-600 bg-red-100">{error}</div>;
 
     return (
         <div className="container mx-auto p-4 md:p-10">
@@ -86,18 +140,19 @@ const AdminDashboard = () => {
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     {artisan.isVIP ? '✅ نعم' : '❌ لا'}
+                                    {artisan.vipPending && <span className="text-xs text-yellow-600 ml-2">(طلب)</span>}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2 flex justify-end">
                                     
-                                    {artisan.vipPending && (
-                                        <button 
-                                            onClick={() => handleAcceptVIP(artisan.id)}
-                                            className="text-xs bg-yellow-500 text-white hover:bg-yellow-600 p-1 rounded transition"
-                                        >
-                                            قبول VIP
-                                        </button>
-                                    )}
+                                    {/* زر تفعيل/إلغاء VIP */}
+                                    <button 
+                                        onClick={() => handleToggleVIP(artisan.id, artisan.isVIP)}
+                                        className={`text-xs p-1 rounded transition ${artisan.isVIP ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-green-500 text-white hover:bg-green-600'}`}
+                                    >
+                                        {artisan.isVIP ? 'إلغاء VIP' : 'تفعيل VIP'}
+                                    </button>
 
+                                    {/* زر الحذف */}
                                     <button 
                                         onClick={() => handleDeleteAccount(artisan.id)}
                                         className="text-xs bg-red-500 text-white hover:bg-red-600 p-1 rounded transition"
@@ -138,8 +193,8 @@ const StatusBadge = ({ status }) => {
             text = 'قيد المراجعة';
             break;
         default:
-            colorClass = 'bg-gray-100 text-gray-800';
-            text = 'غير معروف';
+            colorClass = 'bg-red-100 text-red-800';
+            text = 'معطل';
     }
     return (
         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${colorClass}`}>
