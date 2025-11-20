@@ -1,5 +1,3 @@
-// src/components/ArtisanRegistrationForm.jsx
-
 import React, { useState } from 'react';
 // استيراد وظائف Firebase الفعلية
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'; 
