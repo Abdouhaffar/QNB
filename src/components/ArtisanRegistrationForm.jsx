@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
-// استيراد وظائف Firebase (يجب أن يتم ربطها بملف config.js)
-// import { collection, addDoc } from 'firebase/firestore'; 
-// import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'; 
-// import { db, storage } from '../firebase/config'; // ملف الإعدادات الخاص بك
+// src/components/ArtisanRegistrationForm.jsx
 
-// **بيانات محاكاة للموقع والتخصصات**
+import React, { useState } from 'react';
+// استيراد وظائف Firebase الفعلية
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore'; 
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'; 
+import { createUserWithEmailAndPassword } from 'firebase/auth'; // لإنشاء حساب المصادقة
+import { db, storage, auth } from '../firebase/config'; // ملف الإعدادات الخاص بك
+
+// **بيانات محاكاة للموقع والتخصصات (يمكنك استبدالها ببيانات JSON المهيكلة)**
 const MOCK_WILAYAS = ['الجزائر', 'وهران', 'قسنطينة', 'عنابة'];
 const MOCK_PROFESSIONS = ['نجار', 'سباك', 'كهربائي', 'بناء', 'حداد', 'خياط', 'رسام'];
 
 const ArtisanRegistrationForm = () => {
-    // 1. إدارة حالة النموذج
     const [formData, setFormData] = useState({
         fullName: '',
+        email: '', // سنستخدم الإيميل للمصادقة كما هو شائع في Firebase
         phoneNumber: '',
         profession: '',
         wilaya: '',
@@ -19,63 +22,45 @@ const ArtisanRegistrationForm = () => {
         baladiya: '',
         experienceYears: 0,
         bio: '',
-        secretCode: '' // رقم سري لتأمين الحساب
+        password: '' 
     });
     
-    // 2. إدارة حالة تحميل الملفات
     const [profileImage, setProfileImage] = useState(null);
     const [workImages, setWorkImages] = useState([]);
     
-    // 3. حالة واجهة المستخدم والرسائل
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
 
-    // تحديث البيانات عند تغيير حقول الإدخال
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    // معالجة تغيير صورة الملف الشخصي
     const handleProfileImageChange = (e) => {
         if (e.target.files[0]) {
             setProfileImage(e.target.files[0]);
         }
     };
 
-    // معالجة تغيير صور الأعمال (يسمح بأكثر من صورة)
     const handleWorkImagesChange = (e) => {
         if (e.target.files.length > 0) {
-            // تحويل FileList إلى مصفوفة
-            setWorkImages(Array.from(e.target.files).slice(0, 5)); // تحديد حد أقصى مثلاً 5 صور
+            setWorkImages(Array.from(e.target.files).slice(0, 5));
         }
     };
 
-    // وظيفة رفع الملفات إلى Firebase Storage
+    // **وظيفة رفع الملفات الفعلية إلى Firebase Storage**
     const uploadFile = async (file, path) => {
-        // **هذا هو منطق Firebase Storage Placeholder**
-        
-        // 1. إنشاء مرجع للملف
-        // const storageRef = ref(storage, path + file.name);
-        
-        // 2. رفع الملف
-        // await uploadBytes(storageRef, file);
-        
-        // 3. الحصول على رابط التحميل
-        // const fileUrl = await getDownloadURL(storageRef);
-        // return fileUrl;
-        
-        // محاكاة مؤقتة لرابط التحميل
-        return `https://mockstorage.com/${path}/${file.name}`; 
+        const storageRef = ref(storage, path + file.name + Date.now()); // إضافة ختم زمني لضمان التميز
+        await uploadBytes(storageRef, file);
+        return await getDownloadURL(storageRef);
     };
 
-    // معالجة إرسال النموذج
+    // **معالجة إرسال النموذج باستخدام Firebase**
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setMessage('');
 
-        // 1. التحقق من الصور الأساسية
         if (!profileImage || workImages.length === 0) {
             setMessage('الرجاء رفع صورة شخصية وصورة عمل واحدة على الأقل.');
             setLoading(false);
@@ -83,43 +68,55 @@ const ArtisanRegistrationForm = () => {
         }
 
         try {
-            // **2. رفع الصور إلى Firebase Storage**
-            
-            // رفع الصورة الشخصية
-            const profilePath = `artisans/${formData.phoneNumber}/profile/`;
+            // 1. إنشاء حساب مصادقة (Auth)
+            const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+            const uid = userCredential.user.uid;
+
+            // 2. رفع الصور إلى Firebase Storage
+            const profilePath = `artisans/${uid}/profile/`;
             const profileUrl = await uploadFile(profileImage, profilePath);
 
-            // رفع صور الأعمال
-            const workPath = `artisans/${formData.phoneNumber}/works/`;
+            const workPath = `artisans/${uid}/works/`;
             const workUrls = await Promise.all(
                 workImages.map(img => uploadFile(img, workPath))
             );
 
-            // **3. حفظ البيانات في Firebase Firestore**
-            
+            // 3. حفظ بيانات الحرفي في Firestore
             const artisanData = {
-                ...formData,
+                uid: uid, // ربط بيانات Firestore بمعرّف المصادقة
+                fullName: formData.fullName,
+                email: formData.email,
+                phoneNumber: formData.phoneNumber,
+                profession: formData.profession,
+                wilaya: formData.wilaya,
+                daira: formData.daira,
+                baladiya: formData.baladiya,
+                experienceYears: formData.experienceYears,
+                bio: formData.bio,
                 profilePictureUrl: profileUrl,
                 workImagesUrls: workUrls,
-                status: 'pending', // يبدأ الحساب كـ "قيد المراجعة"
+                status: 'pending', 
                 isVIP: false,
-                createdAt: new Date().toISOString(),
+                createdAt: serverTimestamp(), // ختم زمني من Firebase
             };
 
-            // حفظ بيانات الحرفي في مجموعة artisans
-            // await addDoc(collection(db, "artisans"), artisanData);
+            await addDoc(collection(db, "artisans"), artisanData);
 
             setMessage('✅ تم إرسال طلب التسجيل بنجاح! سيتم مراجعة حسابك وتفعيله قريباً.');
-            setFormData({
-                fullName: '', phoneNumber: '', profession: '', wilaya: '', daira: '', 
-                baladiya: '', experienceYears: 0, bio: '', secretCode: ''
-            });
+            // إعادة تعيين النموذج
+            setFormData({ fullName: '', email: '', phoneNumber: '', profession: '', wilaya: '', daira: '', baladiya: '', experienceYears: 0, bio: '', password: '' });
             setProfileImage(null);
             setWorkImages([]);
             
         } catch (error) {
             console.error("Error submitting form: ", error);
-            setMessage('❌ حدث خطأ أثناء التسجيل. يرجى المحاولة مرة أخرى.');
+            let errorMessage = '❌ حدث خطأ أثناء التسجيل. يرجى المحاولة مرة أخرى.';
+            if (error.code === 'auth/email-already-in-use') {
+                errorMessage = '❌ هذا البريد الإلكتروني مسجل بالفعل. يرجى استخدام بريد آخر.';
+            } else if (error.code === 'auth/weak-password') {
+                errorMessage = '❌ كلمة المرور ضعيفة. يجب أن تكون 6 أحرف على الأقل.';
+            }
+            setMessage(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -130,199 +127,70 @@ const ArtisanRegistrationForm = () => {
             <h1 className="text-3xl font-bold text-center text-green-600 mb-8">تسجيل حساب حرفي جديد</h1>
             
             <form onSubmit={handleSubmit} className="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
-                
-                {/* رسائل التنبيه */}
                 {message && (
                     <div className={`p-4 mb-4 rounded-lg ${message.startsWith('✅') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {message}
                     </div>
                 )}
                 
-                {/* **قسم المعلومات الشخصية والمهنية** */}
                 <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">1. بيانات الحساب والمهنة</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     
-                    {/* الاسم الكامل */}
                     <InputField 
-                        label="الاسم واللقب" 
-                        name="fullName" 
-                        value={formData.fullName} 
-                        onChange={handleChange} 
-                        type="text"
-                        placeholder="أدخل اسمك الكامل"
-                        required
+                        label="الاسم واللقب" name="fullName" value={formData.fullName} onChange={handleChange} 
+                        type="text" placeholder="أدخل اسمك الكامل" required
                     />
                     
-                    {/* رقم الهاتف */}
+                    {/* حقل الإيميل للمصادقة */}
                     <InputField 
-                        label="رقم الهاتف (سيستخدم كمعرّف)" 
-                        name="phoneNumber" 
-                        value={formData.phoneNumber} 
-                        onChange={handleChange} 
-                        type="tel"
-                        placeholder="مثال: 0550123456"
-                        required
+                        label="البريد الإلكتروني (لتسجيل الدخول)" name="email" value={formData.email} onChange={handleChange} 
+                        type="email" placeholder="example@domain.com" required
                     />
 
-                    {/* كلمة المرور/الرقم السري */}
+                    {/* كلمة المرور */}
                     <InputField 
-                        label="كلمة المرور / الرقم السري" 
-                        name="secretCode" 
-                        value={formData.secretCode} 
-                        onChange={handleChange} 
-                        type="password"
-                        placeholder="لتأمين حسابك"
-                        required
+                        label="كلمة المرور (الكود السري)" name="password" value={formData.password} onChange={handleChange} 
+                        type="password" placeholder="يجب أن تكون 6 أحرف على الأقل" required
+                    />
+
+                    <InputField 
+                        label="رقم الهاتف" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} 
+                        type="tel" placeholder="مثال: 0550123456" required
                     />
                     
-                    {/* المهنة/التخصص */}
+                    {/* حقل المهنة */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">المهنة/التخصص</label>
                         <select 
-                            name="profession"
-                            value={formData.profession}
-                            onChange={handleChange}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                            required
+                            name="profession" value={formData.profession} onChange={handleChange}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required
                         >
                             <option value="">اختر التخصص</option>
                             {MOCK_PROFESSIONS.map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
                     </div>
 
-                    {/* سنوات الخبرة */}
                     <InputField 
-                        label="سنوات الخبرة" 
-                        name="experienceYears" 
-                        value={formData.experienceYears} 
-                        onChange={handleChange} 
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        required
+                        label="سنوات الخبرة" name="experienceYears" value={formData.experienceYears} onChange={handleChange} 
+                        type="number" min="0" placeholder="0" required
                     />
                 </div>
 
-                {/* **قسم الموقع الجغرافي** */}
+                {/* باقي النموذج (الموقع، Bio، الصور) - يبقى كما هو */}
                 <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">2. الموقع الجغرافي</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    
-                    {/* الولاية */}
+                    {/* ... حقول الولاية، الدائرة، البلدية ... */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">الولاية</label>
                         <select 
-                            name="wilaya"
-                            value={formData.wilaya}
-                            onChange={handleChange}
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                            required
+                            name="wilaya" value={formData.wilaya} onChange={handleChange}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required
                         >
                             <option value="">اختر الولاية</option>
-                            {/* هنا سيتم جلب البيانات من ملف JSON Structured Data */}
                             {MOCK_WILAYAS.map(w => <option key={w} value={w}>{w}</option>)}
                         </select>
                     </div>
 
-                    {/* الدائرة (Daira) */}
-                    <InputField 
-                        label="الدائرة (اختياري)" 
-                        name="daira" 
-                        value={formData.daira} 
-                        onChange={handleChange} 
-                        type="text"
-                        placeholder="اسم الدائرة"
-                    />
+                    <InputField label="الدائرة (اختياري)" name="daira" value={formData.daira} onChange={handleChange} type="text" placeholder="اسم الدائرة" />
 
-                    {/* البلدية (Baladiya) */}
-                    <InputField 
-                        label="البلدية" 
-                        name="baladiya" 
-                        value={formData.baladiya} 
-                        onChange={handleChange} 
-                        type="text"
-                        placeholder="اسم البلدية"
-                        required
-                    />
-                </div>
-
-                {/* **قسم السيرة الذاتية (Bio)** */}
-                <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">نبذة عن عملك/خبرتك (Bio)</label>
-                    <textarea
-                        name="bio"
-                        value={formData.bio}
-                        onChange={handleChange}
-                        rows="4"
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="صف طبيعة عملك وخبرتك بالتفصيل..."
-                        required
-                    ></textarea>
-                </div>
-
-                {/* **قسم رفع الصور** */}
-                <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">3. صور الأعمال</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                    
-                    {/* الصورة الشخصية */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">صورة شخصية (مطلوبة)</label>
-                        <input 
-                            type="file" 
-                            accept="image/*"
-                            onChange={handleProfileImageChange}
-                            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                            required
-                        />
-                        {profileImage && <p className="mt-2 text-xs text-gray-500">تم اختيار: {profileImage.name}</p>}
-                    </div>
-                    
-                    {/* صور الأعمال */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">صور للأعمال (مطلوبة - بحد أقصى 5)</label>
-                        <input 
-                            type="file" 
-                            accept="image/*"
-                            multiple
-                            onChange={handleWorkImagesChange}
-                            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                            required
-                        />
-                        {workImages.length > 0 && <p className="mt-2 text-xs text-gray-500">تم اختيار {workImages.length} صورة.</p>}
-                    </div>
-                </div>
-
-                {/* زر الإرسال */}
-                <div className="text-center">
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full md:w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-full transition duration-300 shadow-xl disabled:bg-green-400"
-                    >
-                        {loading ? '...جاري إرسال البيانات' : 'تسجيل والإنضمام إلى ARTIZONE'}
-                    </button>
-                </div>
-            </form>
-        </div>
-    );
-};
-
-// **مكون مساعد لحقل الإدخال لتقليل التكرار**
-const InputField = ({ label, name, value, onChange, type, placeholder, required = false, min = null }) => (
-    <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-            {label} {required && <span className="text-red-500">*</span>}
-        </label>
-        <input
-            type={type}
-            name={name}
-            value={value}
-            onChange={onChange}
-            placeholder={placeholder}
-            min={min}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-            required={required}
-        />
-    </div>
-);
-
-export default ArtisanRegistrationForm;
+                    <InputField label="البلدية" name="baladiya" value={formData.baladiya} onChange={handleChange} type="text
