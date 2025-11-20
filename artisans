@@ -1,0 +1,24 @@
+// Collection: /artisans
+{
+  // Document ID: "artisan_unique_id_123"
+  "artisan_unique_id_123": {
+    "fullName": "محمد أمين قاسمي",
+    "phoneNumber": "0550123456",
+    "profession": "نجار",
+    "experienceYears": 15,
+    "wilaya": "الجزائر",
+    "daira": "بئر مراد رايس",
+    "baladiya": "القبة",
+    "status": "active", // active, pending, suspended
+    "isVIP": true,
+    "vipSubscriptionEndDate": "2026-11-01T00:00:00Z", // تاريخ انتهاء VIP
+    "bio": "حرفي متخصص في صناعة وتركيب الأبواب الخشبية الكلاسيكية.",
+    "profilePictureUrl": "https://firebasestorage.com/.../profile.jpg",
+    "workImagesUrls": [
+      "https://firebasestorage.com/.../work1.jpg",
+      "https://firebasestorage.com/.../work2.jpg"
+    ],
+    "rating": 4.8, // متوسط التقييم
+    "createdAt": "2025-10-01T10:00:00Z"
+  }
+}
